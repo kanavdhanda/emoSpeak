@@ -1,0 +1,17 @@
+pandas 
+numpy 
+scikit-learn 
+torch 
+sentence-transformers 
+tqdm 
+fastapi 
+uvicorn 
+joblib
+transformers
+datasets 
+accelerate 
+peft 
+bitsandbytes 
+sentencepiece 
+safetensors 
+evaluate

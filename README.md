@@ -1,2 +1,1 @@
-# EMOSpeak
-git
+# Emo-tts

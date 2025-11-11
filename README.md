@@ -1,59 +1,103 @@
 # Emo-TTS
 
-Emo-TTS is an ensemble-based system designed to generate emotionally aligned speech responses. It is divided into three sections:
+Emo-TTS is an ensemble-based system designed to generate emotionally aligned speech responses.  
+It is divided into three sections, each with a specific purpose, strengths, and limitations.
 
-1. **Emotion & Sentiment Understanding**
-2. **Emotion-Conditioned Response Generation**
+1. **Emotion & Sentiment Understanding**  
+2. **Emotion-Conditioned Response Generation**  
 3. **Emotionally Expressive Speech Synthesis**
 
 ---
 
-<!-- ## Section 1: Emotion & Sentiment Detection
+## Section 1: Emotion & Sentiment Detection
 
-This section evaluates the user’s emotional state using multimodal input.
+### What This Section Does
+This section identifies the user's emotional state from multimodal input (speech, text, potentially facial expressions).  
+It provides the emotional context that influences how the system responds.
 
-### Input Processing
-- User speech is captured and converted to text.
-- ASR models such as Whisper can be used, though improved alternatives may be explored.
+### Why This Section Exists
+Machines responding with appropriate emotional tone require accurate understanding of the user’s current mood.  
+If the system misunderstands the user’s emotional state, everything downstream becomes inconsistent or awkward.
 
-### Sentiment & Emotion Modeling
-Various approaches have been tested:
-- K-means
-- K-NN
-- Neural Networks
-- LLM-based analysis
+### How This Section Works
+1. Speech → Text using an ASR model such as Whisper.  
+2. Text → Embeddings using BERT-based models.  
+3. Embeddings → Sentiment/Emotion prediction using:
+   - K-means clustering  
+   - K-NN  
+   - Neural Networks  
+   - LLM-based classifiers  
+4. Dataset We Used for trainiing
+    - IMDB
+    - Twitter
+These models capture semantic sentiment but currently *lack multimodal depth* (tonality, prosody, facial expression). However they helped us create a baseline for evaluation.
 
-All experiments use BERT-based embeddings to represent user text. These baseline methods focus only on semantic content and do not yet incorporate vocal tone, prosody, or facial expressions.
 
-### Personalization
-A future enhancement involves leveraging concepts inspired by neurogenesis and neuroplasticity to adapt emotional understanding and personalization over time. Implementation details are in progress.
+### Limitations / Challenges to the above mentioned 
+- Whisper and similar models don’t inherently capture tone.
+- Emotion detection from text alone is shallow.
+- Accuracy varies heavily depending on phrasing.
+- Multimodal integration (audio + text + facial cues) is still not implemented.
+- No personalization yet, so the system treats every user the same.
+
+### What we plan to fix
+
+#### Personalization
+To address long-term adaptation, future development aims to simulate functional analogies to:
+- **Neuroplasticity**: adjusting emotional interpretation over time based on repeated user interactions  
+- **Neurogenesis**: allowing new “patterns” of emotional mapping to form beyond initial training  
+
+We aim to mimic the human brain for introducting personalization and Are using these methods to achieve the task:
+
+#### Multimodal capabilites
 
 ---
- -->
 
----
 ## Section 2: Emotion-Aligned Response Generation
 
-This section produces:
-- A textual response to the user
-- A set of target emotional attributes for speech synthesis
+### What This Section Does
+This section generates:
+- The textual reply  
+- The emotional distribution that the response should carry
 
-It can use:
-- An LLM
-- An Ollama-hosted model
-- Third-party APIs (e.g., Gemini)
+### Why This Section Exists
+Understanding emotion is not enough.  
+The system needs to:
+- Respond meaningfully  
+- Keep the emotional tone aligned with the user's state  
+- Produce a coherent emotional directive for speech generation  
 
-The output includes both the response itself and the emotion distribution needed by Section 3.
+### How This Section Works
+Uses an LLM (local or external) to:
+- Interpret the user’s query  
+- Combine detected emotion with conversational intent  
+- Produce a response and emotion map  
+
+Possible LLMs:
+- Ollama-hosted models  
+- Remote APIs (Gemini, etc.)  
+- Any reasonably capable LLM with emotional conditioning  
+
+### Limitations / Challenges
+- Emotional conditioning via prompt engineering is unreliable at times.
+- LLMs can misjudge emotional tone, producing mismatched responses.
+- Needs guardrails to avoid overly dramatic or flat emotional output.
+- Personalization logic is not implemented; output feels generic.
 
 ---
 
 ## Section 3: Emotionally Expressive Speech Synthesis
 
-This component converts the output from Section 2 into expressive audio.
+### What This Section Does
+This section converts the textual output + emotion distribution into expressive, human-like audio.
 
-### Input Format
+### Why This Section Exists
+Emotionally expressive speech is the final user-facing output.  
+Without it, the entire system would sound monotone, robotic, or emotionally tone-deaf.
 
-Example input:
+### How This Section Works
+Krrish is developing the synthesis pipeline.  
+This section takes a JSON-like structure such as:
 
 ```json
 {
@@ -63,12 +107,14 @@ Example input:
 }
 ```
 
-The synthesis model outputs speech with the specified emotional blend.
+The system uses:
+- Emotion-weighted voice samples
+- A pretrained TTS model [CosyVoice V3](https://funaudiollm.github.io/cosyvoice3/)
+- A dataset with emotional annotations (Emilia dataset)
 
-### Voice Modeling
-- Training data is based on the dataset laion/Emilia-with-Emotion-Annotations.
-- Emotional percentages guide the selection of voice samples matching the desired mix.
+Multiple different models both with this flow and pretrained were tested, (code mentioned in repo), however the suggested flow gave us better results(tested on human Perception).
 
-### Core TTS Model
-- We have tested on multiple different models and based on human perception, we have chosen CosyVoice V3
-- [CosyVoice V3](https://funaudiollm.github.io/cosyvoice3/)
+---
+
+# Merging Everything Together
+All three sections are connected for a demo, and frontend and backend codes for the same are also provided in this repository.

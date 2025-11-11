@@ -78,26 +78,19 @@ Possible LLMs:
 - Remote APIs (Gemini, etc.)  
 - Any reasonably capable LLM with emotional conditioning  
 
-### Limitations / Challenges
-- Emotional conditioning via prompt engineering is unreliable at times.
-- LLMs can misjudge emotional tone, producing mismatched responses.
-- Needs guardrails to avoid overly dramatic or flat emotional output.
-- Personalization logic is not implemented; output feels generic.
 
 ---
-
 ## Section 3: Emotionally Expressive Speech Synthesis
 
 ### What This Section Does
-This section converts the textual output + emotion distribution into expressive, human-like audio.
+This section converts the output from Section 2 (text + emotional distribution) into expressive, human-like audio. It ensures that the final speech reflects the intended emotional blend and aligns with the user’s perceived mood.
 
 ### Why This Section Exists
-Emotionally expressive speech is the final user-facing output.  
-Without it, the entire system would sound monotone, robotic, or emotionally tone-deaf.
+Even with accurate emotion detection and strong response generation, flat or mismatched audio breaks immersion.  
+This section produces the final emotional layer, making the system feel natural, consistent, and context-aware.
 
 ### How This Section Works
-Krrish is developing the synthesis pipeline.  
-This section takes a JSON-like structure such as:
+The synthesis pipeline takes structured emotional directives such as:
 
 ```json
 {
@@ -107,13 +100,48 @@ This section takes a JSON-like structure such as:
 }
 ```
 
-The system uses:
-- Emotion-weighted voice samples
-- A pretrained TTS model [CosyVoice V3](https://funaudiollm.github.io/cosyvoice3/)
-- A dataset with emotional annotations (Emilia dataset)
+### The Processing Flow Includes
 
-Multiple different models both with this flow and pretrained were tested, (code mentioned in repo), however the suggested flow gave us better results(tested on human Perception).
+#### 1. Emotional Interpretation
+Convert the emotion percentages into a weighted emotional representation that defines how strongly each emotion influences the final output.
 
+#### 2. Emotion-Specific Audio Extraction
+Identify suitable emotional voice samples from the **Emilia dataset**, matched to the target emotional distribution.
+
+#### 3. Zero-Shot In-Context Generation
+Feed these selected samples into **CosyVoice V3**, enabling the system to:
+- Extract emotional prosody  
+- Transfer vocal style  
+- Blend multiple emotional cues  
+- Apply these characteristics to the generated text  
+
+#### 4. Final Audio Output
+Produce expressive speech by combining:
+- The textual response generated in Section 2  
+- The emotional blend defined by the input distribution  
+
+
+### Why This Approach Should Work
+
+CosyVoice V3 enables:
+- Zero-shot emotional style transfer  
+- High-quality natural speech synthesis  
+- Smooth interpolation between emotion types  
+- Strong performance without fine-tuning  
+
+### Experiments Conducted
+
+Several configurations were explored:
+- Pretrained TTS without emotional conditioning  
+- Alternative emotional datasets  
+- Different numbers of reference samples  
+- Varying emotional blending strategies  
+
+Human perception tests were based on:
+- Clearer emotional expression  
+- More natural-sounding prosody  
+- Improved consistency across different emotions  
+<br></br>
 ---
 
 # Merging Everything Together

@@ -18,8 +18,18 @@ class EmotionalGenerator:
         self.model = genai.GenerativeModel('gemini-2.5-flash')
 
     def generate_response(self, user_text, user_emotion, brain_state):
-        # 1. Construct the Context
+        # 1. Format History
+        history = brain_state.get('conversation_history', [])
+        history_str = ""
+        for turn in history[-5:]: # Only show last 5 turns to save tokens
+            history_str += f"User ({turn['user_emotion']}): {turn['user']}\nAI: {turn['ai']}\n"
+
+        # 2. Construct the Context
         prompt_context = f"""
+        CONVERSATION HISTORY:
+        {history_str}
+        
+        CURRENT INTERACTION:
         User Input: "{user_text}"
         Detected Emotion: {user_emotion}
         
@@ -31,19 +41,24 @@ class EmotionalGenerator:
 
         # 2. The System Directive
         system_prompt = """
-        You are an empathetic AI with an evolving digital brain. 
-        Analyze the user's input and their emotional profile.
+        You are an empathetic AI (EMOTTS) with an evolving emotional memory.
+        Analyze the user's input, their detected vocal emotion, and the CONTEXT of past interactions.
         
         Your Goal:
-        1. Generate a verbal response text.
-        2. Analyze your own emotional state for the response.
+        1. Generate a natural verbal response.
+        2. Analyze your own emotional state for the response, considering the conversation flow.
         
         OUTPUT FORMAT (Strict JSON):
         {
           "text": "The actual words to speak.",
-          "emotion": ["Primary Emotion", "Secondary Emotion"],
-          "percentage": ["XX%", "YY%"]
+          "emotion": ["Emotion 1", "Emotion 2", "Emotion 3", ...], 
+          "percentage": ["XX%", "YY%", "ZZ%", ...]
         }
+        
+        Rules:
+        - You can return as many emotions as needed (e.g., ["Curious", "Amused", "Warm"]).
+        - Percentages must sum to roughly 100%.
+        - If the user was previously angry but is now calm, acknowledge the de-escalation in your tone/emotion.
         """
 
         try:

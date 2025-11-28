@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+numpy
+librosa
+openai-whisper
+transformers
+google-generativeai
+sounddevice
+scipy
+torch
+accelerate
+soundfile

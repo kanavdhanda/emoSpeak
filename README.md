@@ -22,23 +22,9 @@ If the system misunderstands the user’s emotional state, everything downstream
 ### How This Section Works
 1. Speech → Text using an ASR model such as Whisper.  
 2. Text → Embeddings using BERT-based models.  
-3. Embeddings → Sentiment/Emotion prediction using:
-   - K-means clustering  
-   - K-NN  
-   - Neural Networks  
-   - LLM-based classifiers  
-4. Dataset We Used for trainiing
-    - IMDB
-    - Twitter
+
 These models capture semantic sentiment but currently *lack multimodal depth* (tonality, prosody, facial expression). However they helped us create a baseline for evaluation.
 
-
-### Limitations / Challenges to the above mentioned 
-- Whisper and similar models don’t inherently capture tone.
-- Emotion detection from text alone is shallow.
-- Accuracy varies heavily depending on phrasing.
-- Multimodal integration (audio + text + facial cues) is still not implemented.
-- No personalization yet, so the system treats every user the same.
 
 ### What we plan to fix
 

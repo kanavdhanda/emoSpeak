@@ -1,13 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-import { Mic, Square, Activity, Brain, Zap, MessageSquare, Plus, Trash2, RefreshCw } from 'lucide-react';
+import { Mic, Square, Activity, Brain, Zap, MessageSquare, Plus, Trash2, RefreshCw, Send } from 'lucide-react';
+import ParticleOrb from './ParticleOrb';
 
 function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   
   // Multi-Chat State
-  // Each chat now holds its own 'brainState'
   const [chats, setChats] = useState([{ 
     id: 'default_user', 
     name: 'Session 1', 
@@ -18,9 +18,14 @@ function App() {
   
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const chatEndRef = useRef(null);
 
   const currentChat = chats.find(c => c.id === currentChatId) || chats[0];
   const currentBrainState = currentChat.brainState;
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentChat.messages]);
 
   const createNewChat = () => {
     const newId = `user_${Date.now()}`;
@@ -82,7 +87,6 @@ function App() {
     const formData = new FormData();
     formData.append('file', audioBlob, 'recording.wav');
     formData.append('user_id', currentChatId);
-    // Send current brain state to backend
     formData.append('brain_state', JSON.stringify(currentChat.brainState));
 
     try {
@@ -92,7 +96,6 @@ function App() {
 
       const data = response.data;
       
-      // Update Conversation History & Brain State for Current Chat
       setChats(prevChats => prevChats.map(chat => {
         if (chat.id === currentChatId) {
           return {
@@ -108,7 +111,7 @@ function App() {
               emotion: data.ai_response.emotion,
               percentage: data.ai_response.percentage
             }],
-            brainState: data.brain_state // Update local state with backend response
+            brainState: data.brain_state
           };
         }
         return chat;
@@ -122,32 +125,34 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex text-white overflow-hidden font-mono">
+    <div className="min-h-screen bg-background flex text-white overflow-hidden font-mono selection:bg-primary selection:text-black">
       
       {/* Sidebar */}
-      <div className="w-64 bg-surface border-r border-white/10 flex flex-col p-4 gap-4 z-20">
-        <div className="flex items-center gap-2 mb-8">
-          <Brain className="w-6 h-6 text-primary" />
+      <div className="w-64 bg-surface/50 flex flex-col p-6 gap-6 z-20 hidden lg:flex">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
+             <Brain className="w-5 h-5 text-black" />
+          </div>
           <h1 className="text-xl font-bold tracking-widest">EMOTTS</h1>
         </div>
         
         <button 
           onClick={createNewChat}
-          className="flex items-center gap-2 border border-white/20 hover:bg-white/5 text-white p-3 transition-all text-sm uppercase tracking-wider"
+          className="flex items-center gap-3 text-white/70 hover:text-white p-3 rounded-lg hover:bg-white/5 transition-all text-sm uppercase tracking-wider border border-transparent hover:border-white/10"
         >
           <Plus className="w-4 h-4" />
           New Session
         </button>
 
-        <div className="flex-1 overflow-y-auto space-y-1">
+        <div className="flex-1 overflow-y-auto space-y-1 pr-2">
           {chats.map(chat => (
             <button
               key={chat.id}
               onClick={() => setCurrentChatId(chat.id)}
-              className={`w-full text-left p-3 transition-all text-sm ${
+              className={`w-full text-left p-3 rounded-lg transition-all text-sm ${
                 currentChatId === chat.id 
-                  ? 'bg-primary/20 text-primary border-l-2 border-primary' 
-                  : 'text-white/50 hover:text-white'
+                  ? 'bg-white/10 text-white font-bold' 
+                  : 'text-white/40 hover:text-white hover:bg-white/5'
               }`}
             >
               {chat.name}
@@ -158,7 +163,7 @@ function App() {
         <div className="pt-4 border-t border-white/10">
            <button 
             onClick={resetEmotions}
-            className="flex items-center gap-2 text-white/50 hover:text-red-400 text-xs uppercase tracking-widest w-full p-2 transition-all"
+            className="flex items-center gap-2 text-white/40 hover:text-red-400 text-xs uppercase tracking-widest w-full p-2 transition-all"
           >
             <RefreshCw className="w-3 h-3" />
             Reset Memory
@@ -169,118 +174,106 @@ function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col relative">
         
-        <div className="flex-1 p-8 grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-7xl mx-auto w-full h-full">
-          
-          {/* Left Panel: Brain State */}
-          <div className="border border-white/10 p-6 flex flex-col gap-6 h-fit bg-surface">
-            <div className="flex items-center gap-3 text-primary mb-2">
-              <Activity className="w-5 h-5" />
-              <h2 className="text-sm font-bold uppercase tracking-widest">Neural State</h2>
-            </div>
-            
-            <div className="space-y-6">
-              <div>
+        {/* Top Bar: Brain State */}
+        <div className="h-16 border-b border-white/5 flex items-center justify-between px-8 bg-background/50 backdrop-blur-sm z-10">
+          {/* <div className="flex items-center gap-6">
+             <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-primary" />
                 <div className="flex justify-between text-xs text-white/50 mb-2 uppercase">
-                  <span>Baseline Energy</span>
-                  <span>{(currentBrainState.baseline_energy * 100).toFixed(1)}%</span>
+                  <span>Avg Intensity</span>
+                  <span>{(currentBrainState.baseline_energy * 100).toFixed(1)}</span>
                 </div>
-                <div className="w-full bg-white/5 h-1">
-                  <div 
-                    className="h-full bg-primary transition-all duration-1000"
-                    style={{ width: `${currentBrainState.baseline_energy * 100}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between border-t border-white/10 pt-4">
-                <div className="flex items-center gap-3">
-                  <Zap className="w-4 h-4 text-white/50" />
-                  <span className="text-xs text-white/50 uppercase">Interactions</span>
-                </div>
-                <span className="text-xl font-bold text-primary">{currentBrainState.interaction_count}</span>
-              </div>
-            </div>
+             </div>
+             <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-primary" />
+                <span className="text-xs text-white/50 uppercase tracking-widest">Turns</span>
+                <span className="text-sm font-bold text-primary">{currentBrainState.interaction_count}</span>
+             </div>
+          </div> */}
+          <div className="text-xs text-white/30 uppercase tracking-widest">
+            {isRecording ? "Listening..." : isProcessing ? "Thinking..." : "Idle"}
           </div>
+        </div>
 
-          {/* Center Panel: Interaction */}
-          <div className="flex flex-col items-center justify-center gap-12">
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          
+          {/* Center: Visualizer & Controls */}
+          <div className="flex-1 flex flex-col items-center justify-center relative p-8">
             
-            {/* Visualizer / Button */}
-            <div className="relative group">
-              <button
-                onClick={isRecording ? stopRecording : startRecording}
-                disabled={isProcessing}
-                className={`relative w-32 h-32 flex items-center justify-center border transition-all duration-300 ${
-                  isRecording 
-                    ? 'border-primary bg-primary/10' 
-                    : 'border-white/20 hover:border-primary hover:bg-white/5'
-                }`}
-              >
-                {isProcessing ? (
-                  <div className="animate-spin h-8 w-8 border-t-2 border-b-2 border-primary"></div>
-                ) : isRecording ? (
-                  <Square className="w-8 h-8 text-primary fill-current" />
-                ) : (
-                  <Mic className="w-8 h-8 text-white/80" />
-                )}
-              </button>
+            {/* The Orb */}
+            <div className="relative mb-12">
+               <ParticleOrb isActive={isRecording || isProcessing} />
+               
+               {/* Center Button Overlay */}
+               <div className="absolute inset-0 flex items-center justify-center">
+                  <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isProcessing}
+                    className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-500 ${
+                      isRecording 
+                        ? 'bg-primary text-black scale-110 shadow-[0_0_30px_rgba(6,182,212,0.5)]' 
+                        : 'bg-white/10 text-white hover:bg-white/20 hover:scale-105'
+                    }`}
+                  >
+                    {isProcessing ? (
+                      <div className="animate-spin h-6 w-6 border-2 border-black/30 border-t-black rounded-full"></div>
+                    ) : isRecording ? (
+                      <Square className="w-6 h-6 fill-current" />
+                    ) : (
+                      <Mic className="w-6 h-6" />
+                    )}
+                  </button>
+               </div>
             </div>
 
-            <div className="text-center h-8">
-              {isRecording && <span className="text-primary animate-pulse text-xs uppercase tracking-[0.2em]">Recording Input...</span>}
-              {isProcessing && <span className="text-white/50 animate-pulse text-xs uppercase tracking-[0.2em]">Processing...</span>}
-              {!isRecording && !isProcessing && <span className="text-white/30 text-xs uppercase tracking-[0.2em]">Ready</span>}
+            <div className="max-w-md text-center space-y-4">
+              <h2 className="text-2xl font-light text-white/90">
+                {isRecording ? "I'm listening..." : isProcessing ? "Processing..." : "Tap to speak"}
+              </h2>
+              <p className="text-white/40 text-sm leading-relaxed">
+                I adapt to your voice and emotions over time. Speak naturally.
+              </p>
             </div>
-
           </div>
 
-          {/* Right Panel: Conversation */}
-          <div className="border border-white/10 p-6 h-[600px] overflow-y-auto flex flex-col gap-6 scrollbar-hide bg-surface">
-             <div className="flex items-center gap-3 text-primary mb-2 sticky top-0 bg-surface py-2 z-10 border-b border-white/10">
-              <MessageSquare className="w-5 h-5" />
-              <h2 className="text-sm font-bold uppercase tracking-widest">Log</h2>
+          {/* Right: Chat Log */}
+          <div className="w-full lg:w-[450px] bg-surface/50 border-l border-white/5 flex flex-col h-full max-h-screen">
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              {currentChat.messages.length === 0 && (
+                <div className="h-full flex items-center justify-center text-white/20 text-sm uppercase tracking-widest">
+                  No conversation yet
+                </div>
+              )}
+              
+              {currentChat.messages.map((msg, idx) => (
+                <div key={idx} className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-sm leading-relaxed ${
+                    msg.role === 'user' 
+                      ? 'bg-white/10 text-white rounded-tr-sm' 
+                      : 'bg-primary/10 text-primary-foreground rounded-tl-sm border border-primary/20'
+                  }`}>
+                    {msg.text}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 px-1">
+                    {msg.role === 'user' ? (
+                       <span className="text-[10px] uppercase tracking-wider text-white/30">{msg.emotion}</span>
+                    ) : (
+                       <div className="flex gap-2">
+                          {msg.emotion && msg.emotion.slice(0, 2).map((emo, i) => (
+                            <span key={i} className="text-[10px] uppercase tracking-wider text-primary/70">
+                              {emo}
+                            </span>
+                          ))}
+                       </div>
+                    )}
+                  </div>
+
+                </div>
+              ))}
+              <div ref={chatEndRef} />
             </div>
-
-            {currentChat.messages.length === 0 && (
-              <div className="text-white/20 text-center mt-20 text-xs uppercase tracking-widest">
-                No Data
-              </div>
-            )}
-
-            {currentChat.messages.map((msg, idx) => (
-              <div key={idx} className={`flex flex-col gap-2 ${msg.role === 'ai' ? 'items-start' : 'items-end'}`}>
-                
-                {/* Message Bubble */}
-                <div className={`max-w-[90%] p-4 border ${
-                  msg.role === 'ai' 
-                    ? 'border-white/10 bg-white/5 text-white/90' 
-                    : 'border-primary/30 bg-primary/5 text-primary'
-                }`}>
-                  <p className="text-sm leading-relaxed">{msg.text}</p>
-                </div>
-
-                {/* Metadata */}
-                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider opacity-60">
-                  {msg.role === 'user' ? (
-                    <>
-                      <span className="text-primary">{msg.emotion}</span>
-                      {msg.adjusted !== msg.emotion && (
-                        <span className="text-white/40">→ {msg.adjusted}</span>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex flex-wrap gap-3 max-w-[250px]">
-                      {msg.emotion && msg.emotion.map((emo, i) => (
-                        <span key={i} className="flex gap-1">
-                          <span className="text-white/70">{emo}</span>
-                          <span className="text-white/30">{msg.percentage[i]}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
           </div>
 
         </div>

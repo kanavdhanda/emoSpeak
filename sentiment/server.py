@@ -34,7 +34,7 @@ async def startup_event():
     print("⏳ Loading models...")
     
     # 1. Speech to Text
-    asr_model = whisper.load_model("base")
+    asr_model = whisper.load_model("medium")
     
     # 2. Audio Emotion (Voice Tone)
     audio_classifier = pipeline(
@@ -46,7 +46,7 @@ async def startup_event():
     print("   Loading Text Emotion Model...")
     text_classifier = pipeline(
         "text-classification", 
-        model="j-hartmann/emotion-english-distilroberta-base", 
+        model="SamLowe/roberta-base-go_emotions", 
         top_k=None
     )
     
@@ -141,7 +141,7 @@ async def process_audio(
         return {
             "user_input": {
                 "text": text,
-                "detected_emotion": primary_emotion,
+                "detected_emotion": detected_emotion_str, # Return full string "Joy (60%), Surprise (30%)"
                 "adjusted_emotion": detected_emotion_str,
                 "confidence": float(confidence)
             },

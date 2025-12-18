@@ -1,91 +1,129 @@
 import sys
 import os
-
-PROJECT_ROOT = "/data/CosyVoice"
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
+import numpy as np
 import pandas as pd
+from sklearn.preprocessing import normalize
 import torchaudio
+
 from cosyvoice.cli.cosyvoice import CosyVoice2
 from cosyvoice.utils.file_utils import load_wav
 
-# ================================
-# Load emotion index only once
-# ================================
-import pandas as pd
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
-df = pd.read_csv("/data/emilia_emotion_index.csv")
-
-HUMAN_TO_MODEL = {
-    "Cheerful": ["Contentment_best", "Elation_best", "Pleasure_Ecstasy_best"],
-    "Warm": ["Warm_vs._Cold_best", "Affection_best"],
-    "Sad": ["Sadness_best"],
-    "Angry": ["Anger_best", "Malevolence_Malice_best"],
-    "Fear": ["Fear_best"],
-    "Pain": ["Pain_best"],
+# ============================================================
+# Emotion Mapping (Human → Model)
+# ============================================================
+EMOTION_MAP = {
+    "Cheerful": [
+        "Contentment_best", "Elation_best", "Pleasure_Ecstasy_best",
+        "Hope_Enthusiasm_Optimism_best", "Warm_vs._Cold_best", "Affection_best"
+    ],
+    "Warm": [
+        "Warm_vs._Cold_best", "Affection_best", "Authenticity_best",
+        "Soft_vs._Harsh_best"
+    ],
+    "Sad": [
+        "Sadness_best", "Distress_best", "Vulnerable_vs._Emotionally_Detached_best",
+        "Longing_best"
+    ],
+    "Angry": [
+        "Anger_best", "Malevolence_Malice_best", "Impatience_and_Irritability_best",
+        "Contempt_best"
+    ],
+    "Fear": [
+        "Fear_best", "Helplessness_best", "Distress_best"
+    ],
+    "Pain": [
+        "Pain_best", "Distress_best", "Sadness_best"
+    ],
+    "Proud": [
+        "Pride_best", "Triumph_best"
+    ],
+    "Confident": [
+        "Confident_vs._Hesitant_best", "Serious_vs._Humorous_best"
+    ],
+    "Tired": [
+        "Fatigue_Exhaustion_best", "Emotional_Numbness_best"
+    ],
+    "Surprised": [
+        "Astonishment_Surprise_best", "Awe_best"
+    ]
 }
 
-def select_best_blended(emotions, percentages, top_k=1):
 
-    # Convert percentages to 0–1 weights
-    weights = [float(p.strip('%')) / 100 for p in percentages]
+# ============================================================
+# Load emotion index once
+# ============================================================
+df = pd.read_csv("./emilia_emotion_time_index.csv")
+EMO_COLS = [c for c in df.columns if c.endswith("_best")]
+
+# Precompute normalized emotion matrix
+MAT = df[EMO_COLS].values
+MAT_NORM = normalize(MAT, axis=1)
+
+
+# ============================================================
+# Select best emotional prompt (PURE FUNCTION)
+# ============================================================
+def select_best_mapped(emotions, percentages, top_k=1):
+    # Convert percentages → numeric weights
+    weights = np.array([float(p.strip('%')) / 100 for p in percentages], dtype=float)
+    weights = weights / (weights.sum() + 1e-12)
 
     # Build target vector
-    target = {}
-    for emotion_name, w in zip(emotions, weights):
-        for emo_col in HUMAN_TO_MODEL[emotion_name]:
-            target[emo_col] = target.get(emo_col, 0.0) + w
+    target_vec = np.zeros(len(EMO_COLS), dtype=float)
+    print(target_vec)
 
-    # Dataset emotion columns
-    emo_cols = [c for c in df.columns if c.endswith("_best")]
+    for emo_name, w in zip(emotions, weights):
+        mapped_cols = EMOTION_MAP.get(emo_name, [])
+        for col in mapped_cols:
+            if col in EMO_COLS:
+                idx = EMO_COLS.index(col)
+                target_vec[idx] += w
+    print(target_vec)
 
-    # Convert target dict → fixed-length vector
-    target_vec = np.array([target.get(col, 0.0) for col in emo_cols]).reshape(1, -1)
+    # Normalize target
+    target_norm = normalize(target_vec.reshape(1, -1))[0]
+    print(target_norm)
 
-    # Matrix of all sample embeddings
-    mat = df[emo_cols].values
+    # Cosine similarity = dot product (vectors already normalized)
+    sims = MAT_NORM @ target_norm
+    print(sims)
 
-    # Cosine similarity
-    sims = cosine_similarity(target_vec, mat)[0]
+    # Top K indices
+    top_idx = np.argsort(sims)[-top_k:][::-1]
+    print(top_idx)
 
-    df["similarity"] = sims
-
-    # Pick best matching samples
-    best = df.sort_values("similarity", ascending=False).head(top_k)
-
-    return best["wav"].tolist()
-
-# ================================
-# Load CosyVoice only once (fast)
-# ================================
-MODEL_DIR = "/data/CosyVoice/pretrained_models/CosyVoice2-0.5B"
-
-print("🔄 Loading CosyVoice2 model once...")
-cosyvoice = CosyVoice2(MODEL_DIR)
-print("✅ Model loaded!")
+    # Return file paths
+    return df.iloc[top_idx]["wav"].tolist()
 
 
 # ============================================================
-# Main function used by the API
+# Load CosyVoice only once
+# ============================================================
+MODEL_DIR = "/Users/kanavdhanda/.cache/modelscope/hub/models/iic/CosyVoice2-0.5B"
+
+print("🔄 Loading CosyVoice2 model...")
+cosyvoice = CosyVoice2(MODEL_DIR)
+print("✅ CosyVoice2 loaded!")
+
+
+# ============================================================
+# Main API function
 # ============================================================
 def generate_emotional_tts(text, emotions, percentages, top_k=1):
-    output_path = f"/data/CosyVoice/api_output.wav"
 
-    # Pick best prompt WAV
-    best_wav = select_best_blended(emotions, percentages, top_k)[0]
-    print(best_wav)
+    # Select emotional sample
+    best_wav = select_best_mapped(emotions, percentages, top_k)[0]
+    print(f"🎯 Selected prompt: {best_wav}")
 
     prompt_speech_16k = load_wav(best_wav, 16000)
+    PROMPT_TEXT = df[df.wav == best_wav].iloc[0]["text"]
 
-    PROMPT_TEXT = "This is the emotional tone of the speaker."
 
 
-    # Run TTS
-    i = 0
-
+    output_path = "/data/CosyVoice/api_output.wav"
+    
+    # Generate voice
     for out in cosyvoice.inference_zero_shot(
         text,
         PROMPT_TEXT,
@@ -93,7 +131,6 @@ def generate_emotional_tts(text, emotions, percentages, top_k=1):
         stream=False
     ):
         torchaudio.save(output_path, out["tts_speech"], 22050)
-        print(f"Saved: {output_path}")
-        i += 1
+        print(f"💾 Saved output → {output_path}")
 
     return output_path

@@ -4,6 +4,9 @@ import numpy as np
 from tqdm import tqdm
 import joblib
 from sklearn.cluster import KMeans
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import accuracy_score
+from scipy.stats import mode
 from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -14,7 +17,8 @@ tqdm.pandas()
 # ---------- CONFIG ---------- #
 CSV_PATH = "data.csv"          # <-- dataset file
 TEXT_COLUMN = "text"           # <-- column name with text
-N_CLUSTERS = 3                 # <-- number of sentiment-like clusters
+LABEL_COLUMN = "sentiment"       # <-- column name with label
+N_CLUSTERS = 2                 # <-- number of sentiment-like clusters
 MODEL_PATH = "kmeans_sentiment_model.joblib"
 EMBED_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 EMB_CACHE = "embeddings.npy"   # optional cache for faster startup
@@ -32,12 +36,52 @@ def train_model():
         raise ValueError(f"Missing required column: {TEXT_COLUMN}")
 
     df[TEXT_COLUMN] = df[TEXT_COLUMN].astype(str).fillna("")
+    df[LABEL_COLUMN] = df[LABEL_COLUMN].astype(str) # Ensure labels are strings
 
     print(f"📊 Loaded {len(df)} samples. Generating embeddings using {EMBED_MODEL_NAME} ...")
     model = SentenceTransformer(EMBED_MODEL_NAME)
-    embeddings = np.vstack(df[TEXT_COLUMN].progress_apply(lambda x: model.encode(x, show_progress_bar=False)).values)
+    embeddings = model.encode(df[TEXT_COLUMN].tolist(), show_progress_bar=True)
+    labels = df[LABEL_COLUMN].values
 
-    print(f"🧠 Training KMeans (n_clusters={N_CLUSTERS}) ...")
+    # 5-Fold Cross Validation
+    print(f"\n🔄 Starting 5-Fold Cross-Validation (n_clusters={N_CLUSTERS})...")
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    accuracies = []
+
+    fold = 1
+    for train_index, test_index in skf.split(embeddings, labels):
+        X_train, X_test = embeddings[train_index], embeddings[test_index]
+        y_train, y_test = labels[train_index], labels[test_index]
+
+        kmeans_fold = KMeans(n_clusters=N_CLUSTERS, random_state=42, n_init=10)
+        kmeans_fold.fit(X_train)
+        
+        # Map clusters to labels
+        train_clusters = kmeans_fold.labels_
+        cluster_map = {}
+        for i in range(N_CLUSTERS):
+            mask = (train_clusters == i)
+            if np.any(mask):
+                # Find most frequent label in this cluster
+                cluster_labels = y_train[mask]
+                most_common = pd.Series(cluster_labels).mode()[0]
+                cluster_map[i] = most_common
+            else:
+                cluster_map[i] = "unknown" # Should not happen usually
+
+        # Predict on test
+        test_clusters = kmeans_fold.predict(X_test)
+        preds = np.array([cluster_map[c] for c in test_clusters])
+        
+        acc = accuracy_score(y_test, preds)
+        accuracies.append(acc)
+        print(f"Fold {fold}: Accuracy = {acc:.4f}")
+        fold += 1
+
+    mean_acc = np.mean(accuracies)
+    print(f"\n📈 Average Accuracy over 5 folds: {mean_acc:.4f}")
+
+    print(f"🧠 Training KMeans (n_clusters={N_CLUSTERS}) on all data...")
     kmeans = KMeans(n_clusters=N_CLUSTERS, random_state=42, n_init=10)
     kmeans.fit(embeddings)
 
@@ -91,4 +135,5 @@ def predict_cluster(req: SentimentRequest):
 
 # ---------- MAIN ENTRY ---------- #
 if __name__ == "__main__":
-    uvicorn.run("sentiment_kmeans_service:app", host="0.0.0.0", port=8000, reload=False)
+    # uvicorn.run("sentiment_kmeans_service:app", host="0.0.0.0", port=8000, reload=False)
+    train_model()

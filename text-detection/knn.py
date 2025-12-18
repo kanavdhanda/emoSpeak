@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import joblib
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import classification_report, accuracy_score
@@ -40,22 +40,46 @@ def train_model():
     le = LabelEncoder()
     y = le.fit_transform(df[LABEL_COLUMN])
 
-    print(f"📊 Loaded {len(df)} samples. Generating embeddings using {EMBED_MODEL_NAME} ...")
-    model = SentenceTransformer(EMBED_MODEL_NAME)
-    embeddings = np.vstack(df[TEXT_COLUMN].progress_apply(lambda x: model.encode(x, show_progress_bar=False)).values)
+    EMB_CACHE = "embeddings.npy"
+    if os.path.exists(EMB_CACHE):
+        print(f"📦 Loading embeddings from {EMB_CACHE} ...")
+        embeddings = np.load(EMB_CACHE)
+        if len(embeddings) != len(df):
+            print("⚠️ Cached embeddings size mismatch. Regenerating...")
+            model = SentenceTransformer(EMBED_MODEL_NAME)
+            embeddings = model.encode(df[TEXT_COLUMN].tolist(), show_progress_bar=True)
+            np.save(EMB_CACHE, embeddings)
+    else:
+        print(f"📊 Loaded {len(df)} samples. Generating embeddings using {EMBED_MODEL_NAME} ...")
+        model = SentenceTransformer(EMBED_MODEL_NAME)
+        embeddings = model.encode(df[TEXT_COLUMN].tolist(), show_progress_bar=True)
+        np.save(EMB_CACHE, embeddings)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        embeddings, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # 5-Fold Cross Validation
+    print(f"\n🔄 Starting 5-Fold Cross-Validation (k={K_NEIGHBORS})...")
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    accuracies = []
 
-    print(f"🧠 Training KNN (k={K_NEIGHBORS}) ...")
+    fold = 1
+    for train_index, test_index in skf.split(embeddings, y):
+        X_train_fold, X_test_fold = embeddings[train_index], embeddings[test_index]
+        y_train_fold, y_test_fold = y[train_index], y[test_index]
+
+        knn_fold = KNeighborsClassifier(n_neighbors=K_NEIGHBORS)
+        knn_fold.fit(X_train_fold, y_train_fold)
+        preds_fold = knn_fold.predict(X_test_fold)
+        acc = accuracy_score(y_test_fold, preds_fold)
+        accuracies.append(acc)
+        print(f"Fold {fold}: Accuracy = {acc:.4f}")
+        fold += 1
+
+    mean_acc = np.mean(accuracies)
+    print(f"\n📈 Average Accuracy over 5 folds: {mean_acc:.4f}")
+
+    # Train final model on all data
+    print(f"\n🧠 Training final KNN model on all data...")
     knn = KNeighborsClassifier(n_neighbors=K_NEIGHBORS)
-    knn.fit(X_train, y_train)
-
-    preds = knn.predict(X_test)
-    print("\n--- Model Evaluation ---")
-    print(classification_report(y_test, preds))
-    print(f"Accuracy: {accuracy_score(y_test, preds):.4f}")
+    knn.fit(embeddings, y)
 
     joblib.dump(knn, MODEL_PATH)
     joblib.dump(le, ENCODER_PATH)
@@ -123,4 +147,5 @@ def predict_sentiment(req: SentimentRequest):
 
 # ---------- MAIN ENTRY ---------- #
 if __name__ == "__main__":
-    uvicorn.run("sentiment_service:app", host="0.0.0.0", port=8000, reload=False)
+    # uvicorn.run("sentiment_service:app", host="0.0.0.0", port=8000, reload=False)
+    train_model()

@@ -1,3 +1,8 @@
 dataset/
 **/.venv
+ARCHITECTURE_ERASER.md
 ARCHITECTURE.md
+speech_synthesis/cosyvoice
+**/.pt
+**/.npy
+**/.joblib

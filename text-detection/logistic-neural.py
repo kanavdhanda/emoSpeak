@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.metrics import classification_report, accuracy_score
 from sentence_transformers import SentenceTransformer
 
@@ -45,16 +45,17 @@ class SentimentNN(nn.Module):
         self.classifier = nn.Linear(hidden_dim // 2, num_classes)
 
         # Activation: sigmoid for binary, softmax for multi-class
-        if num_classes == 2:
-            self.activation = nn.Sigmoid()
-        else:
-            self.activation = nn.Softmax(dim=1)
+        # Activation: None (return logits for CrossEntropyLoss)
+        # if num_classes == 2:
+        #     self.activation = nn.Sigmoid()
+        # else:
+        #     self.activation = nn.Softmax(dim=1)
 
     def forward(self, x):
         x = self.feature_extractor(x)
         logits = self.classifier(x)
-        probs = self.activation(logits)
-        return probs
+        # probs = self.activation(logits)
+        return logits
 
 
 # ---------------- DATA PREP ---------------- #
@@ -66,24 +67,32 @@ def load_and_prepare_data():
     df[TEXT_COLUMN] = df[TEXT_COLUMN].astype(str).fillna("")
     df[LABEL_COLUMN] = df[LABEL_COLUMN].astype(str)
 
-    print(f"📊 Loaded {len(df)} samples. Generating embeddings using {EMBED_MODEL_NAME} ...")
-    embedder = SentenceTransformer(EMBED_MODEL_NAME)
-    embeddings = np.vstack(df[TEXT_COLUMN].progress_apply(lambda x: embedder.encode(x, show_progress_bar=False)).values)
+    EMB_CACHE = "embeddings.npy"
+    if os.path.exists(EMB_CACHE):
+        print(f"📦 Loading embeddings from {EMB_CACHE} ...")
+        embeddings = np.load(EMB_CACHE)
+        if len(embeddings) != len(df):
+            print("⚠️ Cached embeddings size mismatch. Regenerating...")
+            embedder = SentenceTransformer(EMBED_MODEL_NAME)
+            embeddings = embedder.encode(df[TEXT_COLUMN].tolist(), show_progress_bar=True)
+            np.save(EMB_CACHE, embeddings)
+    else:
+        print(f"📊 Loaded {len(df)} samples. Generating embeddings using {EMBED_MODEL_NAME} ...")
+        embedder = SentenceTransformer(EMBED_MODEL_NAME)
+        embeddings = embedder.encode(df[TEXT_COLUMN].tolist(), show_progress_bar=True)
+        np.save(EMB_CACHE, embeddings)
 
     le = LabelEncoder()
     labels = le.fit_transform(df[LABEL_COLUMN])
     joblib.dump(le, ENCODER_PATH)
     print(f"✅ Label encoder saved → {ENCODER_PATH}")
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        embeddings, labels, test_size=0.2, random_state=42, stratify=labels
-    )
-    return X_train, X_test, y_train, y_test, len(le.classes_), embeddings.shape[1]
+    return embeddings, labels, len(le.classes_), embeddings.shape[1]
 
 
 def create_dataloader(X, y, batch_size=32):
     X_tensor = torch.tensor(X, dtype=torch.float32)
-    y_tensor = torch.tensor(y, dtype=torch.float32 if len(np.unique(y)) == 2 else torch.long)
+    y_tensor = torch.tensor(y, dtype=torch.long)
     dataset = torch.utils.data.TensorDataset(X_tensor, y_tensor)
     return torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
@@ -98,10 +107,10 @@ def train_model(model, train_loader, criterion, optimizer, epochs):
             optimizer.zero_grad()
             outputs = model(X_batch)
 
-            if model.num_classes == 2:
-                loss = criterion(outputs.squeeze(), y_batch)
-            else:
-                loss = criterion(outputs, y_batch)
+            # if model.num_classes == 2:
+            #     loss = criterion(outputs.squeeze(), y_batch)
+            # else:
+            loss = criterion(outputs, y_batch)
 
             loss.backward()
             optimizer.step()
@@ -115,10 +124,10 @@ def evaluate_model(model, X_test, y_test):
         X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(DEVICE)
         preds = model(X_test_tensor)
 
-        if model.num_classes == 2:
-            preds = (preds.squeeze().cpu().numpy() > 0.5).astype(int)
-        else:
-            preds = torch.argmax(preds, dim=1).cpu().numpy()
+        # if model.num_classes == 2:
+        #     preds = (preds.squeeze().cpu().numpy() > 0.5).astype(int)
+        # else:
+        preds = torch.argmax(preds, dim=1).cpu().numpy()
 
         print("\n--- Evaluation ---")
         print(classification_report(y_test, preds))
@@ -127,19 +136,50 @@ def evaluate_model(model, X_test, y_test):
 
 # ---------------- MAIN ---------------- #
 def main():
-    X_train, X_test, y_train, y_test, num_classes, input_dim = load_and_prepare_data()
+    embeddings, labels, num_classes, input_dim = load_and_prepare_data()
 
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    accuracies = []
+
+    print(f"\n🔄 Starting 5-Fold Cross-Validation...")
+
+    fold = 1
+    for train_index, test_index in skf.split(embeddings, labels):
+        print(f"\n--- Fold {fold} ---")
+        X_train, X_test = embeddings[train_index], embeddings[test_index]
+        y_train, y_test = labels[train_index], labels[test_index]
+
+        model = SentimentNN(input_dim, HIDDEN_DIM, num_classes, DROPOUT).to(DEVICE)
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.AdamW(model.parameters(), lr=LR)
+
+        train_loader = create_dataloader(X_train, y_train, BATCH_SIZE)
+
+        train_model(model, train_loader, criterion, optimizer, EPOCHS)
+        
+        # Evaluate
+        model.eval()
+        with torch.no_grad():
+            X_test_tensor = torch.tensor(X_test, dtype=torch.float32).to(DEVICE)
+            preds = model(X_test_tensor)
+
+            preds = torch.argmax(preds, dim=1).cpu().numpy()
+            
+            acc = accuracy_score(y_test, preds)
+            accuracies.append(acc)
+            print(f"Fold {fold} Accuracy: {acc:.4f}")
+        
+        fold += 1
+
+    print(f"\n📈 Average Accuracy over 5 folds: {np.mean(accuracies):.4f}")
+
+    # Train final model on all data
+    print("\n🚀 Training final model on all data...")
     model = SentimentNN(input_dim, HIDDEN_DIM, num_classes, DROPOUT).to(DEVICE)
-    criterion = nn.BCELoss() if num_classes == 2 else nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss()
     optimizer = optim.AdamW(model.parameters(), lr=LR)
-
-    train_loader = create_dataloader(X_train, y_train, BATCH_SIZE)
-
-    print("🚀 Starting training...")
+    train_loader = create_dataloader(embeddings, labels, BATCH_SIZE)
     train_model(model, train_loader, criterion, optimizer, EPOCHS)
-
-    print("🧠 Evaluating model...")
-    evaluate_model(model, X_test, y_test)
 
     torch.save(model.state_dict(), MODEL_PATH)
     print(f"✅ Model saved → {MODEL_PATH}")
